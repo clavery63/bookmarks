@@ -1,47 +1,41 @@
 <?php
 require('../vendor/autoload.php');
-$app = new Silex\Application();
-$app['debug'] = true;
-// Register the monolog logging service
-$app->register(new Silex\Provider\MonologServiceProvider(), array(
-  'monolog.logfile' => 'php://stderr',
-));
-// Register the Twig templating engine
-$app->register(new Silex\Provider\TwigServiceProvider(), array(
-  'twig.path' => __DIR__.'/../views',
-));
-$dbopts = parse_url(getenv('DATABASE_URL'));
-$app->register(new Herrera\Pdo\PdoServiceProvider(),
-  array(
-    'pdo.dsn' => 'pgsql:dbname='.ltrim($dbopts["path"],'/').';host='.$dbopts["host"],
-    'pdo.port' => $dbopts["port"],
-    'pdo.username' => $dbopts["user"],
-    'pdo.password' => $dbopts["pass"]
-  )
-);
-// Our web handlers
-$app->get('/', function() use($app) {
-  $app['monolog']->addDebug('logging output.');
-  return str_repeat('Hello', getenv('TIMES'));
-});
-$app->get('/twig/{name}', function ($name) use ($app) {
-    return $app['twig']->render('index.twig', array(
-        'name' => $name,
-    ));
-});
-$app->get('/db/', function() use($app) {
-  $st = $app['pdo']->prepare('SELECT name FROM test_table');
-  $st->execute();
 
-  $names = array();
-  while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
-    $app['monolog']->addDebug('Row ' . $row['name']);
-    $names[] = $row;
-  }
+if (preg_match('/dev/', $_SERVER['SERVER_NAME'])) {
+  $dbopts = array(
+    'path' => 'bookmarks',
+    'host' => 'localhost',
+    'user' => 'clavery',
+    'pass' => ''
+  );
+} else {
+  $dbopts = parse_url(getenv('DATABASE_URL'));
+}
 
-  return $app['twig']->render('database.twig', array(
-    'names' => $names
-  ));
-});
-$app->run();
+
+$dsn = 'pgsql:dbname='.ltrim($dbopts["path"],'/').';host='.$dbopts["host"];
+$port = $dbopts["port"];
+$username = $dbopts["user"];
+$password = $dbopts["pass"];
+$options = array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION);
+
+try {
+  $db = new PDO($dsn, $username, $password, $options);
+} catch (PDOexception $e) {
+  $error = $e->getMessage();
+  echo "error connecting: $error";
+}
+
+try {
+  $query = 'SELECT * from test_table';
+  $statement = $db->prepare($query);
+  $statement->execute();
+  $results = $statement->fetchAll();
+  $statement->closeCursor();
+} catch (PDOexception $e) {
+  $error = $e->getMessage();
+  echo "error fetching: $error";
+}
+
+echo print_r($results, true);
 ?>
